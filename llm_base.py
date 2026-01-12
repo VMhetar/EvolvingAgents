@@ -66,3 +66,22 @@ async def openai(prompt):
     async with httpx.AsyncClient() as client:
         response = await client.post(url, headers=headers, json=data)
         return response
+
+LLM_PROFILES = {
+    "mistral": {
+        "model": "mistralai/devstral-2512:free",
+        "strengths": "Fast reasoning, concise answers, planning",
+        "best_for": "ideation, decomposition, reasoning"
+    },
+    "nemotron": {
+        "model": "nvidia/nemotron-nano-12b-v2-vl:free",
+        "strengths": "Structured thinking, robustness",
+        "best_for": "analysis, verification, grounding"
+    },
+    "openai": {
+        "model": "openai/gpt-oss-120b:free",
+        "strengths": "Deep reasoning, synthesis",
+        "best_for": "final decisions, integration"
+    }
+}
+
