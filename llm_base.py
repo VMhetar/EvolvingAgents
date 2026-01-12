@@ -17,6 +17,10 @@ headers = {
 
 prompt = f"""
 You are a helpful assistant.
+Your work is as follows:
+1. To think on the given task.
+2. Create a reponse towards the given task.
+3. Understand the reponses of other agents.
 """
 async def mistralai(prompt):
     data = {
