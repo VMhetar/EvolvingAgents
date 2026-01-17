@@ -10,6 +10,8 @@ class State:
     
     async def update_state(self, state: Dict[str, Any],prompt:str):
         update_data = await llm_call(prompt)
-        self.state.update(update_data)
-        return self.state
-    
+        if "state_data" not in update_data:
+            return self.state
+        if update_data.get("confidence",0) < 0.6:
+            return self.state
+        self.state.update(update_data["state_data"])
