@@ -19,6 +19,12 @@ base_prompt = f"""
 You are an AI agent who can understand the injected data and train yourself using that data.
 You do NOT update your weights while training.
 You MUST train on the data provided to you.
+You MUST train over states.
+state are in the form:
+{
+     'state_id':"1",
+     'state_data':'data information',
+}
 """
 @mcp.tool()
 async def llm_call(prompt:str):
