@@ -1,65 +1,90 @@
 import os
-import asyncio
 import json
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP('127.0.0.1')
+mcp = FastMCP("127.0.0.1")
 
-url = 'https://openrouter.ai/api/v1/chat/completions'
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-api_key = os.getenv('OPENROUTER_API_KEY')
-
-headers = {
-    'Authorization': f'Bearer {api_key}',
-    'Content-Type': 'application/json'
+HEADERS = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json",
 }
 
-base_prompt = f"""
-You are an AI agent who can understand the injected data and train yourself using that data.
-You do NOT update your weights while training.
-You MUST train on the data provided to you.
-You MUST train over states.
-state are in the form:
+BASE_PROMPT = """
+You are a frozen reasoning engine.
+
+You DO NOT update model weights.
+You DO NOT store raw data.
+You ONLY propose structured state updates.
+
+Given current_state and new_data,
+return ONLY valid JSON in this format:
+
 {
-     'state_id':"1",
-     'state_data':'data information',
+  "state_delta": {
+    "key": "value"
+  },
+  "confidence": 0.0
 }
+
+No explanations.
+No extra text.
 """
+
 @mcp.tool()
-async def llm_call(prompt:str):
-    prompt = base_prompt
-    data = {
+async def llm_call(prompt: str):
+    final_prompt = BASE_PROMPT + "\n\n" + prompt
+
+    payload = {
         "model": "gpt-3.5-turbo",
         "messages": [
             {
-                f"role": "user",
-                f"content": {prompt}
+                "role": "user",
+                "content": final_prompt
             }
-        ]
+        ],
+        "temperature": 0.0
     }
+
     async with httpx.AsyncClient(timeout=20) as client:
         try:
-            response = await client.post(url, headers=headers, json=data)
+            response = await client.post(
+                OPENROUTER_URL,
+                headers=HEADERS,
+                json=payload
+            )
 
-            if response.status_code== 429:
-                return{
-                    "error":"RATE_LIMITED",
-                    "status":429
-                }
+            if response.status_code == 429:
+                return {"error": "RATE_LIMITED"}
+
             if response.status_code != 200:
                 return {
-                    "error":"LLM_HTTP_ERROR",
-                    "status":response.status_code,
-                    "body":response.text
+                    "error": "LLM_HTTP_ERROR",
+                    "status": response.status_code,
+                    "body": response.text
                 }
-        except httpx.TimeoutException:
+
+            result = response.json()
+            content = result["choices"][0]["message"]["content"]
+
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError:
                 return {
-                    "error": "TIMEOUT"
+                    "error": "INVALID_JSON_FROM_LLM",
+                    "raw": content
                 }
+
+            return parsed
+
+        except httpx.TimeoutException:
+            return {"error": "TIMEOUT"}
 
         except Exception as e:
             return {
-               "error": "LLM_CALL_FAILED",
+                "error": "LLM_CALL_FAILED",
                 "details": str(e)
             }
