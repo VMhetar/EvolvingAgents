@@ -1,6 +1,7 @@
 import os
 import json
 import httpx
+from typing import Dict, Any
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("127.0.0.1")
@@ -13,40 +14,63 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-BASE_PROMPT = """
+MODEL_ID = "meta-llama/llama-3.1-8b-instruct"
+
+SYSTEM_PROMPT = """
 You are a frozen reasoning engine.
 
-You DO NOT update model weights.
-You DO NOT store raw data.
-You ONLY propose structured state updates.
+Rules (non-negotiable):
+- You DO NOT update model weights.
+- You DO NOT store raw observations.
+- You ONLY output structured state updates.
+- You MUST return valid JSON.
+- No explanations. No prose. No markdown.
 
-Given current_state and new_data,
-return ONLY valid JSON in this format:
+Output schema:
 
 {
-  "state_delta": {
-    "key": "value"
-  },
-  "confidence": 0.0
+  "state_delta": { "key": "value" },
+  "confidence": <float between 0 and 1>
 }
 
-No explanations.
-No extra text.
-"""
+If no update is justified, return:
+
+{
+  "state_delta": {},
+  "confidence": 0.0
+}
+""".strip()
+
+
+def _validate_response(obj: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(obj, dict):
+        raise ValueError("Response is not a JSON object")
+
+    if "state_delta" not in obj or "confidence" not in obj:
+        raise ValueError("Missing required fields")
+
+    if not isinstance(obj["state_delta"], dict):
+        raise ValueError("state_delta must be a dict")
+
+    conf = obj["confidence"]
+    if not isinstance(conf, (int, float)) or not (0.0 <= conf <= 1.0):
+        raise ValueError("confidence must be a float between 0 and 1")
+
+    return {
+        "state_delta": obj["state_delta"],
+        "confidence": float(conf)
+    }
+
 
 @mcp.tool()
-async def llm_call(prompt: str):
-    final_prompt = BASE_PROMPT + "\n\n" + prompt
-
+async def llm_call(prompt: str) -> Dict[str, Any]:
     payload = {
-        "model": "gpt-3.5-turbo",
+        "model": MODEL_ID,
+        "temperature": 0.0,
         "messages": [
-            {
-                "role": "user",
-                "content": final_prompt
-            }
-        ],
-        "temperature": 0.0
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ]
     }
 
     async with httpx.AsyncClient(timeout=20) as client:
@@ -67,18 +91,18 @@ async def llm_call(prompt: str):
                     "body": response.text
                 }
 
-            result = response.json()
-            content = result["choices"][0]["message"]["content"]
+            raw = response.json()["choices"][0]["message"]["content"]
 
             try:
-                parsed = json.loads(content)
-            except json.JSONDecodeError:
-                return {
-                    "error": "INVALID_JSON_FROM_LLM",
-                    "raw": content
-                }
+                parsed = json.loads(raw)
+                return _validate_response(parsed)
 
-            return parsed
+            except Exception as e:
+                return {
+                    "error": "INVALID_MODEL_OUTPUT",
+                    "raw": raw,
+                    "details": str(e)
+                }
 
         except httpx.TimeoutException:
             return {"error": "TIMEOUT"}
