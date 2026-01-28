@@ -24,7 +24,20 @@ class BufferMemory:
 
     def _prune(self):
         now = time.time()
+        cleaned = []
 
-        self.buffer = [e for e in self.buffer if now - e["timestamp"] <= self.ttl]
-        if len(self.buffer) > self.max_size:
-            self.buffer = self.buffer[-self.max_size:]
+        for e in self.buffer:
+            # Drop malformed entries safely
+            if not isinstance(e, dict):
+                continue
+            if "timestamp" not in e or "data" not in e:
+                continue
+
+            if now - e["timestamp"] <= self.ttl:
+                cleaned.append(e)
+
+    # Keep most recent entries only
+        if len(cleaned) > self.max_size:
+            cleaned = cleaned[-self.max_size:]
+
+        self.buffer = cleaned

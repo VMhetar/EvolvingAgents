@@ -6,7 +6,7 @@ class PersistentMemory:
     def __init__(self, memory: List[Dict[str, Any]] | None = None):
         self.memory = memory or []
     
-    def memory(self):
+    def get_memory(self):
         return self.memory
     
     async def propose_memory_update(self, new_data: Dict[str, Any]):
